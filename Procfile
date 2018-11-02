@@ -1,0 +1,1 @@
+web: java -jar target/kpi-donate-0.0.1.jar
