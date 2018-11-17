@@ -38,5 +38,5 @@ public class Project {
     @JsonIgnore
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private List<Maecenas> maecenases;
+    private List<Donate> maecenases;
 }
