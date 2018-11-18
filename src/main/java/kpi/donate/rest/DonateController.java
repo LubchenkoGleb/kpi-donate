@@ -11,14 +11,14 @@ import kpi.donate.repository.DonateRepo;
 import kpi.donate.repository.ProjectRepo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.PostConstruct;
-import javax.servlet.http.HttpServletResponse;
 import javax.validation.Valid;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -54,28 +54,16 @@ public class DonateController {
         Stripe.apiKey = secretKey;
     }
 
-    @PostMapping(
-            value = "/confirm",
-            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
-    private void confirm(
-            HttpServletResponse httpServletResponse,
-            @RequestParam Map<String, String> chargeRequest) throws StripeException, IOException {
+    @PostMapping(value = "/confirm")
+    private ResponseEntity<Map<String, String>> confirm(
+            @RequestBody Map<String, String> chargeRequest) throws StripeException {
         log.info("confirmDonate '{}'", chargeRequest);
 
         Long projectId = Long.valueOf(chargeRequest.get("projectId"));
         Long amount = Long.valueOf(chargeRequest.get("amount"));
 
-        Optional<Project> optionalProject = projectRepo.findById(projectId);
-        if (!optionalProject.isPresent()) {
-            httpServletResponse.sendRedirect(frontUrl + "?status=" + statusProjectNotFound);
-            return;
-        }
-        Project project = optionalProject.get();
-
-        if (!validateProject(httpServletResponse, project)) {
-            return;
-        }
+        Map<String, String> response = new HashMap<>();
+        Project project = validateProject(projectId);
 
         Map<String, Object> chargeParams = new HashMap<>();
         chargeParams.put("currency", Currency.UAH);
@@ -86,32 +74,74 @@ public class DonateController {
         log.info("chargeRes '{}'", chargeRes);
 
         String status = chargeRes.getStatus();
-        StringBuilder redirect = new StringBuilder(frontUrl).append("?status=").append(status);
+        response.put("status", status);
 
         if (status.equals(statusSucceeded)) {
             String tokenForImageUpload = processPayment(project, amount);
             log.info("'tokenForImageUpload={}'", tokenForImageUpload);
-            redirect.append("&token=").append(tokenForImageUpload);
+            response.put("token", tokenForImageUpload);
         }
 
-        String redirectUrl = redirect.toString();
-        log.info("'redirectUrl={}'", redirect);
-
-        httpServletResponse.sendRedirect(redirectUrl);
+        return ResponseEntity.ok(response);
     }
 
-    private boolean validateProject(HttpServletResponse httpServletResponse, Project project) {
-        try {
+//    @PostMapping(
+//            value = "/confirm",
+//            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE,
+//            produces = MediaType.APPLICATION_JSON_VALUE)
+//    private void confirm(
+//            HttpServletResponse httpServletResponse,
+//            @RequestParam Map<String, String> chargeRequest) throws StripeException, IOException {
+//        log.info("confirmDonate '{}'", chargeRequest);
+//
+//        Long projectId = Long.valueOf(chargeRequest.get("projectId"));
+//        Long amount = Long.valueOf(chargeRequest.get("amount"));
+//
+//        Optional<Project> optionalProject = projectRepo.findById(projectId);
+//        if (!optionalProject.isPresent()) {
+//            httpServletResponse.sendRedirect(frontUrl + "?status=" + statusProjectNotFound);
+//            return;
+//        }
+//        Project project = optionalProject.get();
+//
+//        if (!validateProject(httpServletResponse, project)) {
+//            return;
+//        }
+//
+//        Map<String, Object> chargeParams = new HashMap<>();
+//        chargeParams.put("currency", Currency.UAH);
+//        chargeParams.put("description", "Donate donate for KPI project");
+//        chargeParams.put("amount", amount);
+//        chargeParams.put("source", chargeRequest.get("stripeToken"));
+//        Charge chargeRes = Charge.create(chargeParams);
+//        log.info("chargeRes '{}'", chargeRes);
+//
+//        String status = chargeRes.getStatus();
+//        StringBuilder redirect = new StringBuilder(frontUrl).append("?status=").append(status);
+//
+//        if (status.equals(statusSucceeded)) {
+//            String tokenForImageUpload = processPayment(project, amount);
+//            log.info("'tokenForImageUpload={}'", tokenForImageUpload);
+//            redirect.append("&token=").append(tokenForImageUpload);
+//        }
+//
+//        String redirectUrl = redirect.toString();
+//        log.info("'redirectUrl={}'", redirect);
+//
+//        httpServletResponse.sendRedirect(redirectUrl);
+//    }
 
-            if (!project.isOpen()) {
-                httpServletResponse.sendRedirect(frontUrl + "?status=" + statusProjectClosed);
-                return false;
-            }
-            return true;
+    private Project validateProject(Long projectId) {
 
-        } catch (IOException e) {
-            throw new RuntimeException("Unable to send a redirect");
+        Optional<Project> optionalProject = projectRepo.findById(projectId);
+        if (!optionalProject.isPresent()) {
+            throw new RuntimeException("Project not found");
         }
+
+        if (!optionalProject.get().isOpen()) {
+            throw new RuntimeException("Project is closed");
+        }
+        return optionalProject.get();
     }
 
     private String processPayment(Project project, Long amount) {
